@@ -26,3 +26,8 @@ docker run -d --name jaeger \
   -p 9411:9411 \
   jaegertracing/all-in-one:latest
 ```
+
+## TODO
+
+- [ ] Add Prometheus, Metrics and logs
+- [ ] Use OpenTelemetry semantic conventions

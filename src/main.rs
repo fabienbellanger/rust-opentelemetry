@@ -1,7 +1,8 @@
 use axum::{Router, routing::get};
 use opentelemetry::{KeyValue, trace::TracerProvider};
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing::{Level, instrument};
 use tracing_opentelemetry::OpenTelemetryLayer;
@@ -35,6 +36,8 @@ fn init_tracer_provider() -> SdkTracerProvider {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .with_endpoint("http://localhost:4317")
+        .with_compression(opentelemetry_otlp::Compression::Gzip)
+        .with_timeout(Duration::from_secs(1))
         .build()
         .unwrap();
 
