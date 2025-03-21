@@ -1,17 +1,21 @@
 use axum::{Router, routing::get};
+use opentelemetry::{KeyValue, trace::TracerProvider};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use tokio::net::TcpListener;
-use tracing::instrument;
-use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt};
+use tracing::{Level, instrument};
+use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[macro_use]
 extern crate tracing;
 
-fn init_tracing() {
+fn _init_tracing() {
     let format = tracing_subscriber::fmt::format()
-        .with_level(true) // don't include levels in formatted output
-        .with_target(true) // don't include targets
-        .with_thread_ids(false) // include the thread ID of the current thread
-        .with_thread_names(false) // include the name of the current thread
+        .with_level(true)
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_thread_names(false)
         .with_file(true)
         .with_line_number(true);
 
@@ -27,9 +31,49 @@ fn init_tracing() {
     tracing::subscriber::set_global_default(subscriber).unwrap();
 }
 
+fn init_tracer_provider() -> SdkTracerProvider {
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint("http://localhost:4317")
+        .build()
+        .unwrap();
+
+    SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(
+            Resource::builder()
+                .with_attribute(KeyValue::new("service.name", "rust-opentelemetry"))
+                .build(),
+        )
+        .build()
+}
+
+fn init_tracing_subscriber() -> SdkTracerProvider {
+    let tracer_provider = init_tracer_provider();
+
+    let tracer = tracer_provider.tracer("rust-opentelemetry");
+
+    tracing_subscriber::registry()
+        // The global level filter prevents the exporter network stack
+        // from reentering the globally installed OpenTelemetryLayer with
+        // its own spans while exporting, as the libraries should not use
+        // tracing levels below DEBUG. If the OpenTelemetry layer needs to
+        // trace spans and events with higher verbosity levels, consider using
+        // per-layer filtering to target the telemetry layer specifically,
+        // e.g. by target matching.
+        .with(tracing_subscriber::filter::LevelFilter::from_level(
+            Level::INFO,
+        ))
+        .with(tracing_subscriber::fmt::layer())
+        .with(OpenTelemetryLayer::new(tracer))
+        .init();
+
+    tracer_provider
+}
+
 #[tokio::main]
 async fn main() {
-    init_tracing();
+    let _guard = init_tracing_subscriber();
 
     let app = Router::new().route("/", get(hello));
 
@@ -41,6 +85,13 @@ async fn main() {
 #[instrument(name = "hello")]
 async fn hello() -> &'static str {
     warn!("Hello, World!");
+
+    get_hello("Fabien")
+}
+
+#[instrument(name = "get_hello")]
+fn get_hello(s: &str) -> &'static str {
+    info!("Hello, {}!", s);
 
     "Hello, World!"
 }
