@@ -18,7 +18,7 @@ extern crate tracing;
 fn init_tracer_provider() -> SdkTracerProvider {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
-        .with_endpoint("http://localhost:4317")
+        .with_endpoint("http://jaeger:4317")
         .with_compression(opentelemetry_otlp::Compression::Gzip)
         .with_timeout(Duration::from_secs(1))
         .build()
