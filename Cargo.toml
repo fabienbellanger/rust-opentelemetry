@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 axum = "0.8.1"
 hyper = "1.6.0"
-log = "0.4.26"
+log = "0.4.27"
 opentelemetry = { version = "0.29.0", features = ["metrics", "trace"] }
 opentelemetry-otlp = { version = "0.29.0", features = ["default", "grpc-tonic", "tonic", "gzip-tonic", "metrics"] }
 opentelemetry_sdk = { version = "0.29.0", features = ["metrics", "trace"] }
