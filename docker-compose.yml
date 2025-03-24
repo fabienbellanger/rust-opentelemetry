@@ -1,12 +1,27 @@
-version: '3.8'
-
 services:
+  server:
+    container_name: server
+    restart: no
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3333:3333"
+    networks:
+      - metrics
+
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/jaeger:latest
     container_name: jaeger
+    restart: no
     environment:
       - COLLECTOR_ZIPKIN_HOST_PORT=:9411
       - COLLECTOR_OTLP_ENABLED=true
+#    volumes:
+#      - "./docker/jaeger:/etc/jaeger"
+#    command:
+#      - "--config"
+#      - "/etc/jaeger/config.yml"
     ports:
       - "6831:6831/udp"
       - "6832:6832/udp"
@@ -18,3 +33,53 @@ services:
       - "14268:14268"
       - "14269:14269"
       - "9411:9411"
+    networks:
+      - metrics
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: no
+    volumes:
+      - ./docker/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    expose:
+      - 9090
+    networks:
+      - metrics
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: no
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Puis 00000000
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3003:3000"
+    expose:
+      - 3000
+    networks:
+      - metrics
+
+networks:
+  metrics:
+
+volumes:
+  prometheus_data:
+    external: false
+  grafana_data:
+    external: false
