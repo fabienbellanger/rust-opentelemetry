@@ -1,22 +1,24 @@
 mod prometheus;
 
-use std::future::ready;
-use axum::{Router, routing::get, middleware};
+use crate::prometheus::PrometheusMetric;
+use axum::http::StatusCode;
+use axum::{Router, middleware, routing::get};
 use opentelemetry::{KeyValue, trace::TracerProvider};
-use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
+use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithTonicConfig};
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
+use std::future::ready;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing::{Level, instrument};
 use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use crate::prometheus::PrometheusMetric;
 
 #[macro_use]
 extern crate tracing;
 
 fn init_tracer_provider() -> SdkTracerProvider {
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
+    let exporter = SpanExporter::builder()
         .with_tonic()
         .with_endpoint("http://jaeger:4317")
         .with_compression(opentelemetry_otlp::Compression::Gzip)
@@ -40,9 +42,7 @@ fn init_tracing_subscriber() -> SdkTracerProvider {
     let tracer = tracer_provider.tracer("rust-open-telemetry");
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::LevelFilter::from_level(
-            Level::INFO,
-        ))
+        .with(LevelFilter::from_level(Level::INFO))
         .with(tracing_subscriber::fmt::layer())
         .with(OpenTelemetryLayer::new(tracer))
         .init();
@@ -54,7 +54,10 @@ fn init_tracing_subscriber() -> SdkTracerProvider {
 async fn main() {
     let _guard = init_tracing_subscriber();
 
-    let mut app = Router::new().route("/", get(hello));
+    let mut app = Router::new()
+        .route("/", get(home))
+        .route("/error", get(error))
+        .route("/hello", get(hello));
 
     let prometheus = PrometheusMetric::get_handle().unwrap();
     app = app
@@ -67,6 +70,20 @@ async fn main() {
     info!("Starting server on 0.0.0.0:3333...");
     let listener = TcpListener::bind("0.0.0.0:3333").await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+#[instrument(name = "home")]
+async fn home() -> &'static str {
+    info!("Home");
+
+    "Home"
+}
+
+#[instrument(name = "error")]
+async fn error() -> (StatusCode, &'static str) {
+    error!("Home");
+
+    (StatusCode::INTERNAL_SERVER_ERROR, "Home")
 }
 
 #[instrument(name = "hello")]

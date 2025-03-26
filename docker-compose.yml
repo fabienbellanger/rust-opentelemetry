@@ -17,14 +17,15 @@ services:
     environment:
       - COLLECTOR_ZIPKIN_HOST_PORT=:9411
       - COLLECTOR_OTLP_ENABLED=true
-#    volumes:
-#      - "./docker/jaeger:/etc/jaeger"
-#    command:
-#      - "--config"
-#      - "/etc/jaeger/config.yml"
+    #    volumes:
+    #      - "./docker/jaeger:/etc/jaeger"
+    #    command:
+    #      - "--config"
+    #      - "/etc/jaeger/config.yml"
     ports:
       - "16686:16686"
       - "4317:4317"
+      - "4318:4318"
     networks:
       - metrics
 
@@ -36,11 +37,11 @@ services:
       - ./docker/prometheus:/etc/prometheus
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--web.enable-lifecycle'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--web.enable-lifecycle"
     ports:
       - "9090:9090"
     expose:
@@ -58,7 +59,7 @@ services:
       - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin # Puis 00000000
+      - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
     ports:
       - "3003:3000"
