@@ -1,7 +1,7 @@
 services:
   server:
     container_name: server
-    restart: no
+    restart: on-failure
     build:
       context: .
       dockerfile: Dockerfile
@@ -11,28 +11,47 @@ services:
       - metrics
 
   jaeger:
-    image: jaegertracing/jaeger:latest
+    image: jaegertracing/all-in-one:1.68.0
     container_name: jaeger
-    restart: no
-    environment:
-      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
-      - COLLECTOR_OTLP_ENABLED=true
-    #    volumes:
-    #      - "./docker/jaeger:/etc/jaeger"
-    #    command:
-    #      - "--config"
-    #      - "/etc/jaeger/config.yml"
+    restart: on-failure
     ports:
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
       - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+      - "9411:9411"
       - "4317:4317"
       - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=elasticsearch
+      - ES_SERVER_URLS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - metrics
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.5
+    container_name: elasticsearch
+    restart: on-failure
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
       - metrics
 
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
-    restart: no
+    restart: on-failure
     volumes:
       - ./docker/prometheus:/etc/prometheus
       - prometheus_data:/prometheus
@@ -52,7 +71,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
-    restart: no
+    restart: on-failure
     volumes:
       - grafana_data:/var/lib/grafana
       - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
@@ -64,14 +83,14 @@ services:
     ports:
       - "3003:3000"
     expose:
-      - 3000
+      - 3003
     networks:
       - metrics
-
 networks:
   metrics:
 
 volumes:
+  elasticsearch_data:
   prometheus_data:
     external: false
   grafana_data:
