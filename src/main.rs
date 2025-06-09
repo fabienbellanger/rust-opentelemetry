@@ -20,7 +20,7 @@ extern crate tracing;
 fn init_tracer_provider() -> SdkTracerProvider {
     let exporter = SpanExporter::builder()
         .with_tonic()
-        .with_endpoint("http://jaeger:4317")
+        .with_endpoint("http://localhost:4317")
         .with_compression(opentelemetry_otlp::Compression::Gzip)
         .with_timeout(Duration::from_secs(1))
         .build()
@@ -83,11 +83,15 @@ async fn home() -> &'static str {
 async fn error() -> (StatusCode, &'static str) {
     error!("Home");
 
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
     (StatusCode::INTERNAL_SERVER_ERROR, "Home")
 }
 
 #[instrument(name = "hello")]
 async fn hello() -> &'static str {
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
     warn!("Hello, World!");
 
     get_hello("Fabien")

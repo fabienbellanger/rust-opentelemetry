@@ -1,97 +1,90 @@
+version: '3.8'
+
 services:
-  server:
-    container_name: server
-    restart: on-failure
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3333:3333"
-    networks:
-      - metrics
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.68.0
-    container_name: jaeger
-    restart: on-failure
-    ports:
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "5778:5778"
-      - "16686:16686"
-      - "14268:14268"
-      - "14250:14250"
-      - "9411:9411"
-      - "4317:4317"
-      - "4318:4318"
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-      - SPAN_STORAGE_TYPE=elasticsearch
-      - ES_SERVER_URLS=http://elasticsearch:9200
-    depends_on:
-      - elasticsearch
-    networks:
-      - metrics
-
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.5
-    container_name: elasticsearch
-    restart: on-failure
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-    ports:
-      - "9200:9200"
-      - "9300:9300"
+  # Tempo - Distributed tracing backend
+  tempo:
+    image: grafana/tempo:2.5.0
+    command: [ "-config.file=/etc/tempo.yaml" ]
     volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
+      - ./docker/tempo/tempo.yaml:/etc/tempo.yaml
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
     networks:
-      - metrics
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3200/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Prometheus - Metrics collection and storage
   prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    restart: on-failure
-    volumes:
-      - ./docker/prometheus:/etc/prometheus
-      - prometheus_data:/prometheus
+    image: prom/prometheus:v2.48.0
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.console.libraries=/etc/prometheus/console_libraries"
-      - "--web.console.templates=/etc/prometheus/consoles"
-      - "--web.enable-lifecycle"
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
     ports:
       - "9090:9090"
-    expose:
-      - 9090
     networks:
-      - metrics
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Grafana - Visualization and dashboards
   grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    restart: on-failure
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
-      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    image: grafana/grafana:10.4.19
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
     ports:
-      - "3003:3000"
-    expose:
-      - 3003
+      - "3000:3000"
     networks:
-      - metrics
-networks:
-  metrics:
+      - observability
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+
+  # OTEL Collector - Optional: for more advanced telemetry collection
+  # Commenté pour éviter les conflits de ports - Tempo peut recevoir OTLP directement
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib:0.89.0
+  #   command: ["--config=/etc/otel-collector-config.yaml"]
+  #   volumes:
+  #     - ./docker/otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+  #   ports:
+  #     - "8888:8888"   # Prometheus metrics
+  #     - "8889:8889"   # Prometheus exporter metrics
+  #   networks:
+  #     - observability
+  #   depends_on:
+  #     - tempo
+  #     - prometheus
 
 volumes:
-  elasticsearch_data:
-  prometheus_data:
-    external: false
-  grafana_data:
-    external: false
+  tempo-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge
