@@ -3,11 +3,15 @@
 use axum::body::Body;
 use axum::{extract::MatchedPath, middleware::Next, response::IntoResponse};
 use hyper::Request;
-use metrics::{counter, histogram};
+use metrics::{counter, gauge, histogram};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
+use std::collections::HashSet;
 use std::time::Instant;
+use sysinfo::{Disks, System};
 
-pub const SECONDS_DURATION_BUCKETS: &[f64; 11] = &[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0];
+pub const SECONDS_DURATION_BUCKETS: &[f64; 11] = &[
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+];
 
 pub struct PrometheusMetric {}
 
@@ -49,6 +53,41 @@ impl PrometheusMetric {
         counter.increment(1);
         let histogram = histogram!("http_requests_duration_seconds", &labels);
         histogram.record(latency);
+
+        // System metrics
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        sys.refresh_all();
+
+        // CPU
+        let gauge = gauge!("system_cpu_usage", "service" => "rust-open-telemetry");
+        gauge.set(sys.global_cpu_usage());
+
+        // Memory
+        let gauge = gauge!("system_total_memory", "service" => "rust-open-telemetry");
+        gauge.set(sys.total_memory() as f64);
+        let gauge = gauge!("system_used_memory", "service" => "rust-open-telemetry");
+        gauge.set(sys.used_memory() as f64);
+
+        // Disks usage
+        let disks = Disks::new_with_refreshed_list();
+        let mut seen_mounts = HashSet::new();
+        let mut total_space = 0;
+        let mut total_used = 0;
+        for disk in &disks {
+            dbg!(disk);
+            let mount = disk.mount_point();
+            if seen_mounts.insert(mount.to_path_buf()) {
+                total_space += disk.total_space();
+                total_used += disk.total_space() - disk.available_space();
+            }
+        }
+
+        let gauge = gauge!("system_total_disks_space", "service" => "rust-open-telemetry");
+        gauge.set(total_space as f64);
+        let gauge = gauge!("system_used_disks_usage", "service" => "rust-open-telemetry");
+        gauge.set(total_used as f64);
 
         response
     }

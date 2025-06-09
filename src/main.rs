@@ -1,21 +1,20 @@
+#[macro_use]
+extern crate tracing;
 mod prometheus;
 
 use crate::prometheus::PrometheusMetric;
 use axum::http::StatusCode;
-use axum::{Router, middleware, routing::get};
-use opentelemetry::{KeyValue, trace::TracerProvider};
+use axum::{middleware, routing::get, Router};
+use opentelemetry::{trace::TracerProvider, KeyValue};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithTonicConfig};
-use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
+use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use std::future::ready;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tracing::{Level, instrument};
+use tracing::{instrument, Level};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[macro_use]
-extern crate tracing;
 
 fn init_tracer_provider() -> SdkTracerProvider {
     let exporter = SpanExporter::builder()
@@ -52,7 +51,7 @@ fn init_tracing_subscriber() -> SdkTracerProvider {
 
 #[tokio::main]
 async fn main() {
-    let _guard = init_tracing_subscriber();
+    // let _guard = init_tracing_subscriber();
 
     let mut app = Router::new()
         .route("/", get(home))
