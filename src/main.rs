@@ -83,7 +83,7 @@ async fn home() -> &'static str {
 async fn error() -> (StatusCode, &'static str) {
     error!("Home");
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     (StatusCode::INTERNAL_SERVER_ERROR, "Home")
 }
