@@ -31,6 +31,7 @@ impl PrometheusMetric {
 
     /// Layer tracking requests
     pub async fn get_layer(req: Request<Body>, next: Next) -> impl IntoResponse {
+        // HTTP request metrics
         let start = Instant::now();
         let path = if let Some(matched_path) = req.extensions().get::<MatchedPath>() {
             matched_path.as_str().to_owned()
@@ -38,9 +39,7 @@ impl PrometheusMetric {
             req.uri().path().to_owned()
         };
         let method = req.method().clone();
-
         let response = next.run(req).await;
-
         let latency = start.elapsed().as_secs_f64();
         let status = response.status().as_u16().to_string();
         let labels = [
@@ -57,18 +56,14 @@ impl PrometheusMetric {
 
         // System metrics
         let mut sys = System::new_all();
-        sys.refresh_cpu_all();
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        sys.refresh_cpu_all();
-
+        
         // CPU
+        sys.refresh_cpu_all();
+        tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await; // Allow time for CPU refresh
+        sys.refresh_cpu_all();
         let gauge = gauge!("system_cpu_usage", "service" => "rust-open-telemetry");
         gauge.set(sys.global_cpu_usage());
-
-        // for (i, cpu) in sys.cpus().iter().enumerate() {
-        //     println!("CPU {}: {:.0}%", i, cpu.cpu_usage());
-        // }
-        println!("CPUs:         {:.0}%", sys.global_cpu_usage());
+        println!("      CPUs: {:.0}% - {} cores", sys.global_cpu_usage(), sys.cpus().len());
 
         // Memory
         sys.refresh_memory();
@@ -76,8 +71,11 @@ impl PrometheusMetric {
         gauge.set(sys.total_memory() as f64);
         let gauge = gauge!("system_used_memory", "service" => "rust-open-telemetry");
         gauge.set(sys.used_memory() as f64);
-        println!("Memory total: {}", ByteSize::b(sys.total_memory()));
-        println!("Memory used:  {}", ByteSize::b(sys.used_memory()));
+        println!("    Memory: {} / {} = {:.1}% (available {})",
+            ByteSize::b(sys.used_memory()).display().si(), 
+            ByteSize::b(sys.total_memory()).display().si(),
+            (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0,
+            ByteSize::b(sys.total_memory() - sys.used_memory()).display().si());
 
         // Disks usage
         let disks = Disks::new_with_refreshed_list();
@@ -85,24 +83,22 @@ impl PrometheusMetric {
         let mut total_used = 0;
         let mut total_available = 0;
         for disk in &disks {
-            // println!("{:?} - {:?} - {:?} : {}", disk.name(), disk.mount_point(), disk.file_system(), ByteSize::b(disk.total_space()));
-            let mount = disk.mount_point();
-            if mount == Path::new("/") {
+            // println!("{disk:?}");
+            if disk.mount_point() == Path::new("/") {
                 total_available += disk.available_space();
                 total_space += disk.total_space();
                 total_used += disk.total_space() - disk.available_space();
             }
         }
-        println!("Disk usage:   {} / {} = {:.1} ({})", 
-            ByteSize::b(total_used).display().si(), 
-            ByteSize::b(total_space).display().si(), 
-            (total_used as f64 / total_space as f64) * 100.0, 
-            ByteSize::b(total_available).display().si());
-
         let gauge = gauge!("system_total_disks_space", "service" => "rust-open-telemetry");
         gauge.set(total_space as f64);
         let gauge = gauge!("system_used_disks_usage", "service" => "rust-open-telemetry");
         gauge.set(total_used as f64);
+        println!("Disk usage: {} / {} = {:.1}% (available {})", 
+            ByteSize::b(total_used).display().si(), 
+            ByteSize::b(total_space).display().si(), 
+            (total_used as f64 / total_space as f64) * 100.0, 
+            ByteSize::b(total_available).display().si());
 
         println!("----------------------------------------------------------------");
 
