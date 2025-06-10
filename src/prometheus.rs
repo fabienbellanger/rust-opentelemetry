@@ -58,9 +58,9 @@ impl PrometheusMetric {
         let mut sys = System::new_all();
         
         // CPU
-        sys.refresh_cpu_all();
-        tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await; // Allow time for CPU refresh
-        sys.refresh_cpu_all();
+        sys.refresh_cpu_usage();
+        tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
+        sys.refresh_cpu_usage();
         let gauge = gauge!("system_cpu_usage", "service" => "rust-open-telemetry");
         gauge.set(sys.global_cpu_usage());
         println!("      CPUs: {:.0}% - {} cores", sys.global_cpu_usage(), sys.cpus().len());
