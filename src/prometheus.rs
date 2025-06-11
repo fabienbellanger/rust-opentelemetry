@@ -33,13 +33,13 @@ impl PrometheusMetric {
     /// Layer tracking requests
     pub async fn get_layer(req: Request<Body>, next: Next) -> impl IntoResponse {
         // HTTP request metrics
-        let start = Instant::now();
         let path = if let Some(matched_path) = req.extensions().get::<MatchedPath>() {
             matched_path.as_str().to_owned()
         } else {
             req.uri().path().to_owned()
         };
         let method = req.method().clone();
+        let start = Instant::now();
         let response = next.run(req).await;
         let latency = start.elapsed().as_secs_f64();
         let status = response.status().as_u16().to_string();
@@ -59,22 +59,7 @@ impl PrometheusMetric {
         let system_metrics = SystemMetrics::new("/").await;
         println!("System metrics:\n{}", system_metrics);
         println!("----------------------------------------------------------------");
-
-        // Gauges
-        let gauge = gauge!("system_cpu_usage", "service" => "rust-open-telemetry");
-        gauge.set(system_metrics.cpu_usage);
-        let gauge = gauge!("system_total_memory", "service" => "rust-open-telemetry");
-        gauge.set(system_metrics.total_memory as f64);
-        let gauge = gauge!("system_used_memory", "service" => "rust-open-telemetry");
-        gauge.set(system_metrics.used_memory as f64);
-        let gauge = gauge!("system_total_swap", "service" => "rust-open-telemetry");
-        gauge.set(system_metrics.total_swap as f64);
-        let gauge = gauge!("system_used_swap", "service" => "rust-open-telemetry");
-        gauge.set(system_metrics.used_swap as f64);
-        let gauge = gauge!("system_total_disks_space", "service" => "rust-open-telemetry");
-        gauge.set(system_metrics.total_disks_space as f64);
-        let gauge = gauge!("system_used_disks_usage", "service" => "rust-open-telemetry");
-        gauge.set(system_metrics.used_disks_space as f64);
+        system_metrics.add_metrics();
 
         response
     }
@@ -145,6 +130,16 @@ impl SystemMetrics {
             total_disks_space,
             used_disks_space,
         }
+    }
+
+    fn add_metrics(&self) {
+        gauge!("system_cpu_usage", "service" => "rust-open-telemetry").set(self.cpu_usage);
+        gauge!("system_total_memory", "service" => "rust-open-telemetry").set(self.total_memory as f64);
+        gauge!("system_used_memory", "service" => "rust-open-telemetry").set(self.used_memory as f64);
+        gauge!("system_total_swap", "service" => "rust-open-telemetry").set(self.total_swap as f64);
+        gauge!("system_used_swap", "service" => "rust-open-telemetry").set(self.used_swap as f64);
+        gauge!("system_total_disks_space", "service" => "rust-open-telemetry").set(self.total_disks_space as f64);
+        gauge!("system_used_disks_usage", "service" => "rust-open-telemetry").set(self.used_disks_space as f64);
     }
 }
 
