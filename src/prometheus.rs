@@ -5,6 +5,7 @@ use axum::{extract::MatchedPath, middleware::Next, response::IntoResponse};
 use hyper::Request;
 use metrics::{counter, gauge, histogram};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
+use core::fmt;
 use std::path::Path;
 use std::time::Instant;
 use sysinfo::{Disks, System};
@@ -55,53 +56,113 @@ impl PrometheusMetric {
         histogram.record(latency);
 
         // System metrics
+        let system_metrics = SystemMetrics::new("/").await;
+        println!("System metrics:\n{}", system_metrics);
+        println!("----------------------------------------------------------------");
+
+        // Gauges
+        let gauge = gauge!("system_cpu_usage", "service" => "rust-open-telemetry");
+        gauge.set(system_metrics.cpu_usage);
+        let gauge = gauge!("system_total_memory", "service" => "rust-open-telemetry");
+        gauge.set(system_metrics.total_memory as f64);
+        let gauge = gauge!("system_used_memory", "service" => "rust-open-telemetry");
+        gauge.set(system_metrics.used_memory as f64);
+        let gauge = gauge!("system_total_swap", "service" => "rust-open-telemetry");
+        gauge.set(system_metrics.total_swap as f64);
+        let gauge = gauge!("system_used_swap", "service" => "rust-open-telemetry");
+        gauge.set(system_metrics.used_swap as f64);
+        let gauge = gauge!("system_total_disks_space", "service" => "rust-open-telemetry");
+        gauge.set(system_metrics.total_disks_space as f64);
+        let gauge = gauge!("system_used_disks_usage", "service" => "rust-open-telemetry");
+        gauge.set(system_metrics.used_disks_space as f64);
+
+        response
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SystemMetrics {
+    /// Average CPU usage in percent
+    cpu_usage: f32,
+
+    /// Total memory in bytes
+    total_memory: u64,
+
+    /// Used memory in bytes
+    used_memory: u64,
+
+    /// Total swap space in bytes
+    total_swap: u64,
+
+    /// Used swap space in bytes
+    used_swap: u64,
+
+    /// Total disk space in bytes for a specified mount point
+    total_disks_space: u64,
+
+    /// Used disk space in bytes for a specified mount point
+    used_disks_space: u64,
+}
+
+impl SystemMetrics {
+    async fn new(disk_mount_point: &str) -> Self {
         let mut sys = System::new_all();
-        
+
         // CPU
         sys.refresh_cpu_usage();
+        let mut cpu_usage = sys.global_cpu_usage();
         tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
         sys.refresh_cpu_usage();
-        let gauge = gauge!("system_cpu_usage", "service" => "rust-open-telemetry");
-        gauge.set(sys.global_cpu_usage());
-        println!("      CPUs: {:.0}% - {} cores", sys.global_cpu_usage(), sys.cpus().len());
+        cpu_usage += sys.global_cpu_usage();
+        cpu_usage /= 2.0;
 
         // Memory
         sys.refresh_memory();
-        let gauge = gauge!("system_total_memory", "service" => "rust-open-telemetry");
-        gauge.set(sys.total_memory() as f64);
-        let gauge = gauge!("system_used_memory", "service" => "rust-open-telemetry");
-        gauge.set(sys.used_memory() as f64);
-        println!("    Memory: {} / {} = {:.1}% (available {})",
-            ByteSize::b(sys.used_memory()).display().si(), 
-            ByteSize::b(sys.total_memory()).display().si(),
-            (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0,
-            ByteSize::b(sys.total_memory() - sys.used_memory()).display().si());
+        let total_memory = sys.total_memory();
+        let used_memory = sys.used_memory();
 
-        // Disks usage
+        // Swap
+        let total_swap = sys.total_swap();
+        let used_swap = sys.used_swap();
+        
+        // Disks
         let disks = Disks::new_with_refreshed_list();
-        let mut total_space = 0;
-        let mut total_used = 0;
-        let mut total_available = 0;
+        let mut total_disks_space = 0;
+        let mut used_disks_space = 0;
         for disk in &disks {
-            // println!("{disk:?}");
-            if disk.mount_point() == Path::new("/") {
-                total_available += disk.available_space();
-                total_space += disk.total_space();
-                total_used += disk.total_space() - disk.available_space();
+            if disk.mount_point() == Path::new(disk_mount_point) {
+                total_disks_space += disk.total_space();
+                used_disks_space += disk.total_space() - disk.available_space();
             }
         }
-        let gauge = gauge!("system_total_disks_space", "service" => "rust-open-telemetry");
-        gauge.set(total_space as f64);
-        let gauge = gauge!("system_used_disks_usage", "service" => "rust-open-telemetry");
-        gauge.set(total_used as f64);
-        println!("Disk usage: {} / {} = {:.1}% (available {})", 
-            ByteSize::b(total_used).display().si(), 
-            ByteSize::b(total_space).display().si(), 
-            (total_used as f64 / total_space as f64) * 100.0, 
-            ByteSize::b(total_available).display().si());
 
-        println!("----------------------------------------------------------------");
+        Self {
+            cpu_usage: cpu_usage,
+            total_memory,
+            used_memory,
+            total_swap,
+            used_swap,
+            total_disks_space,
+            used_disks_space,
+        }
+    }
+}
 
-        response
+impl fmt::Display for SystemMetrics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "CPUs:       {:.1}%\n\
+             Memory:     {} / {}\n\
+             Swap:       {} / {}\n\
+             Disk usage: {} / {}",
+            self.cpu_usage,
+            ByteSize::b(self.used_memory),
+            ByteSize::b(self.total_memory),
+            ByteSize::b(self.used_swap),
+            ByteSize::b(self.total_swap),
+            ByteSize::b(self.used_disks_space),
+            ByteSize::b(self.total_disks_space),
+        )
     }
 }
